@@ -79,6 +79,14 @@ Only a few key WHOOP metrics enabled by default but many additional detailed sen
 * **Resting Heart Rate**: Your resting heart rate.
 * **Sleep Performance**: Your sleep performance score.
 * **Last Workout Strain**: Strain score for your most recent workout.
+* **Steps**: Steps so far in the current cycle (WHOOP `step_count`, cycles from 23 Sep 2026 on; unavailable when WHOOP has no step data).
+* **Previous Day Steps / Strain / Calories**: Final totals of the cycle before the current one.
+* **Sleep Time Asleep**: Light + slow wave + REM time of your latest main sleep.
+* **Sleep Need Total**: Baseline + sleep debt + recent strain − recent naps, as the WHOOP app shows it.
+* **Naps Today Time Asleep**: Time asleep in naps during the current cycle. *Attributes:* count, each nap's start/end/minutes, last nap start.
+* **Workouts Today**: Number of workouts in the current cycle. *Attributes:* a list with sport, start/end, strain, average/max HR, kJ, kcal, distance and minutes in each HR zone (0-5).
+
+**Sleep vs naps:** the sleep sensors follow your latest *main* sleep. A nap no longer replaces last night's sleep figures; naps are reported separately.
 
 **Available (Disabled by Default - Enable as Needed):**
 
@@ -92,6 +100,10 @@ Only a few key WHOOP metrics enabled by default but many additional detailed sen
   * *Attributes:* Sleep ID, User ID, Created At, Updated At, Start Time, End Time, Timezone Offset, Nap status, Score State.
 * **Last Workout Overview**: Status of your most recent workout.
   * *Attributes:* Workout ID, User ID, Created At, Updated At, Start Time, End Time, Timezone Offset, Sport ID, Percent Recorded (from score), Score State.
+
+### Today's Workout Zone Totals
+
+* **Workouts Today Zone 0-5 Time**: Minutes in each HR zone summed over all workouts in the current cycle.
 
 ### User Profile
 

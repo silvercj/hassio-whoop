@@ -122,6 +122,15 @@ class WhoopApiClient:
         except UpdateFailed:
             return None
 
+    async def get_recent_records(
+        self, path: str, limit: int
+    ) -> Optional[Dict[str, Any]]:
+        """Get the newest `limit` records (max 25) of a collection endpoint."""
+        try:
+            return await self._request("GET", path, params={"limit": limit})
+        except UpdateFailed:
+            return None
+
     async def get_latest_recovery(self) -> Optional[Dict[str, Any]]:
         """Get the latest recovery record."""
         params = {"limit": 1}

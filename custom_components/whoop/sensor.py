@@ -1,7 +1,7 @@
 """Sensor platform for WHOOP."""
 
 import logging
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -28,6 +28,13 @@ from .const import (
     ENERGY_KILOJOULES,
     ENERGY_KILOCALORIES,
     DEFAULT_ENERGY_UNIT,
+)
+
+from .record_selection import (
+    sleep_asleep_milli,
+    sleep_need_total_milli,
+    sum_milli,
+    workout_summary,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -243,6 +250,61 @@ async def async_setup_entry(
             SensorStateClass.MEASUREMENT,
             int,
             enabled_by_default=False,
+        ),
+        WhoopDataSensor(
+            coordinator,
+            entry,
+            device_info,
+            "latest_cycle",
+            "step_count",
+            "Steps",
+            "steps",
+            "mdi:shoe-print",
+            None,
+            SensorStateClass.TOTAL_INCREASING,
+            int,
+        ),
+        WhoopDataSensor(
+            coordinator,
+            entry,
+            device_info,
+            "previous_cycle",
+            "step_count",
+            "Previous Day Steps",
+            "steps",
+            "mdi:shoe-print",
+            None,
+            SensorStateClass.MEASUREMENT,
+            int,
+        ),
+        WhoopDataSensor(
+            coordinator,
+            entry,
+            device_info,
+            "previous_cycle.score",
+            "strain",
+            "Previous Day Strain",
+            None,
+            "mdi:fire",
+            None,
+            SensorStateClass.MEASUREMENT,
+            float,
+            2,
+        ),
+        WhoopDataSensor(
+            coordinator,
+            entry,
+            device_info,
+            "previous_cycle.score",
+            "kilojoule",
+            "Previous Day Kilojoules",
+            UnitOfEnergy.KILO_JOULE,
+            "mdi:flash",
+            None,
+            SensorStateClass.MEASUREMENT,
+            float,
+            1,
+            is_energy_sensor=True,
         ),
         WhoopRecoveryOverviewSensor(coordinator, entry, device_info),
         WhoopDataSensor(
@@ -555,6 +617,53 @@ async def async_setup_entry(
             enabled_by_default=False,
             is_duration_sensor=True,
         ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "sleep_asleep_time",
+            "Sleep Time Asleep",
+            lambda d: sleep_asleep_milli(d.get("latest_sleep")),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:sleep",
+            device_class=SensorDeviceClass.DURATION,
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "sleep_need_total",
+            "Sleep Need Total",
+            lambda d: sleep_need_total_milli(d.get("latest_sleep")),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:bed-clock",
+            device_class=SensorDeviceClass.DURATION,
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "naps_today_time",
+            "Naps Today Time Asleep",
+            lambda d: sum(
+                sleep_asleep_milli(n) or 0 for n in d.get("naps_today") or []
+            ),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:power-sleep",
+            device_class=SensorDeviceClass.DURATION,
+            attributes_fn=lambda d: {
+                "count": len(d.get("naps_today") or []),
+                "naps": [
+                    {
+                        "start": n.get("start"),
+                        "end": n.get("end"),
+                        "asleep_min": round((sleep_asleep_milli(n) or 0) / 60000),
+                    }
+                    for n in d.get("naps_today") or []
+                ],
+                "last_nap_start": (d.get("latest_nap") or {}).get("start"),
+            },
+        ),
         WhoopWorkoutOverviewSensor(coordinator, entry, device_info),
         WhoopDataSensor(
             coordinator,
@@ -763,6 +872,119 @@ async def async_setup_entry(
             int,
             enabled_by_default=False,
             is_duration_sensor=True,
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "workouts_today",
+            "Workouts Today",
+            lambda d: len(d.get("workouts_today") or []),
+            icon="mdi:format-list-checks",
+            state_class=SensorStateClass.MEASUREMENT,
+            attributes_fn=lambda d: {
+                "workouts": [
+                    workout_summary(w) for w in d.get("workouts_today") or []
+                ],
+                "total_strain_sum": round(
+                    sum(
+                        (w.get("score") or {}).get("strain") or 0
+                        for w in d.get("workouts_today") or []
+                    ),
+                    2,
+                ),
+            },
+            needs_key="latest_cycle",
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "workouts_today_zone_0_time",
+            "Workouts Today Zone 0 Time",
+            lambda d: sum_milli(
+                d.get("workouts_today") or [],
+                ("score", "zone_durations", "zone_zero_milli"),
+            ),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:heart-pulse",
+            device_class=SensorDeviceClass.DURATION,
+            enabled_by_default=False,
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "workouts_today_zone_1_time",
+            "Workouts Today Zone 1 Time",
+            lambda d: sum_milli(
+                d.get("workouts_today") or [],
+                ("score", "zone_durations", "zone_one_milli"),
+            ),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:heart-pulse",
+            device_class=SensorDeviceClass.DURATION,
+            enabled_by_default=False,
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "workouts_today_zone_2_time",
+            "Workouts Today Zone 2 Time",
+            lambda d: sum_milli(
+                d.get("workouts_today") or [],
+                ("score", "zone_durations", "zone_two_milli"),
+            ),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:heart-pulse",
+            device_class=SensorDeviceClass.DURATION,
+            enabled_by_default=False,
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "workouts_today_zone_3_time",
+            "Workouts Today Zone 3 Time",
+            lambda d: sum_milli(
+                d.get("workouts_today") or [],
+                ("score", "zone_durations", "zone_three_milli"),
+            ),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:heart-pulse",
+            device_class=SensorDeviceClass.DURATION,
+            enabled_by_default=False,
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "workouts_today_zone_4_time",
+            "Workouts Today Zone 4 Time",
+            lambda d: sum_milli(
+                d.get("workouts_today") or [],
+                ("score", "zone_durations", "zone_four_milli"),
+            ),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:heart-pulse",
+            device_class=SensorDeviceClass.DURATION,
+            enabled_by_default=False,
+        ),
+        WhoopComputedSensor(
+            coordinator,
+            entry,
+            device_info,
+            "workouts_today_zone_5_time",
+            "Workouts Today Zone 5 Time",
+            lambda d: sum_milli(
+                d.get("workouts_today") or [],
+                ("score", "zone_durations", "zone_five_milli"),
+            ),
+            unit=UnitOfTime.MILLISECONDS,
+            icon="mdi:heart-pulse",
+            device_class=SensorDeviceClass.DURATION,
+            enabled_by_default=False,
         ),
     ]
     async_add_entities(sensors, update_before_add=True)
@@ -1071,3 +1293,76 @@ class WhoopWorkoutOverviewSensor(CoordinatorEntity, SensorEntity):
             and _get_nested_value(self.coordinator.data, "latest_workout.id")
             is not None
         )
+
+
+class WhoopComputedSensor(CoordinatorEntity, SensorEntity):
+    """Sensor whose value is derived from one or more WHOOP records."""
+
+    _attr_attribution = "Data provided by WHOOP"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator,
+        config_entry: ConfigEntry,
+        device_info: DeviceInfo,
+        key: str,
+        friendly_name: str,
+        value_fn: Callable[[Dict[str, Any]], Any],
+        unit: Optional[str] = None,
+        icon: Optional[str] = None,
+        device_class: Optional[SensorDeviceClass] = None,
+        state_class: Optional[SensorStateClass] = SensorStateClass.MEASUREMENT,
+        attributes_fn: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+        enabled_by_default: bool = True,
+        needs_key: Optional[str] = None,
+    ):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self.config_entry = config_entry
+        self._value_fn = value_fn
+        self._attributes_fn = attributes_fn
+        self._needs_key = needs_key
+        self._attr_unique_id = f"{config_entry.entry_id}_computed_{key}"
+        self._attr_name = friendly_name
+        self._attr_device_info = device_info
+        self._attr_entity_registry_enabled_default = enabled_by_default
+        if unit:
+            self._attr_native_unit_of_measurement = unit
+        if icon:
+            self._attr_icon = icon
+        if device_class:
+            self._attr_device_class = device_class
+        if state_class:
+            self._attr_state_class = state_class
+
+    def _data(self) -> Dict[str, Any]:
+        return self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+
+    @property
+    def native_value(self) -> Any:
+        """Return the derived value."""
+        try:
+            return self._value_fn(self._data())
+        except (TypeError, ValueError, AttributeError):
+            _LOGGER.debug("Could not compute %s", self._attr_name, exc_info=True)
+            return None
+
+    @property
+    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
+        """Return derived attributes, if any."""
+        if self._attributes_fn is None:
+            return None
+        try:
+            return self._attributes_fn(self._data())
+        except (TypeError, ValueError, AttributeError):
+            return None
+
+    @property
+    def available(self) -> bool:
+        """Available when the coordinator has data (and the needed record)."""
+        if not (super().available and self.coordinator.data):
+            return False
+        if self._needs_key and not self._data().get(self._needs_key):
+            return False
+        return True

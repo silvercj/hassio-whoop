@@ -26,6 +26,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.helpers import entity_registry as er
 
 from .api import WhoopApiClient, WhoopUnauthorized
+from .record_selection import split_cycles, split_sleeps, split_workouts
 from .const import (
     DOMAIN,
     CONFIG_FLOW_VERSION,
@@ -34,12 +35,21 @@ from .const import (
     DURATION_MANUAL,
     DEFAULT_DURATION_UNIT,
     ENERGY_KILOJOULES,
+    CYCLE_COLLECTION_URL,
+    SLEEP_COLLECTION_URL,
+    WORKOUT_COLLECTION_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor"]
 SCAN_INTERVAL = timedelta(minutes=2)
+
+# How many recent records to fetch per collection. Still one request each, so
+# the request count per update is unchanged.
+CYCLE_FETCH_LIMIT = 2  # today + yesterday
+SLEEP_FETCH_LIMIT = 10  # enough to find the night's sleep behind several naps
+WORKOUT_FETCH_LIMIT = 10  # everything in today's cycle
 
 # Retry a 401 for this long (forcing one token refresh) before demanding reauth.
 AUTH_RETRY_WINDOW = timedelta(minutes=15)
@@ -179,6 +189,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "latest_sleep": None,
             "latest_cycle": None,
             "latest_workout": None,
+            "previous_cycle": None,
+            "latest_nap": None,
+            "naps_today": [],
+            "workouts_today": [],
         }
         try:
             await oauth_session.async_ensure_token_valid()
@@ -189,9 +203,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 api_client.get_user_profile_basic(),
                 api_client.get_body_measurement(),
                 api_client.get_latest_recovery(),
-                api_client.get_latest_sleep(),
-                api_client.get_latest_cycle(),
-                api_client.get_latest_workout(),
+                api_client.get_recent_records(SLEEP_COLLECTION_URL, SLEEP_FETCH_LIMIT),
+                api_client.get_recent_records(CYCLE_COLLECTION_URL, CYCLE_FETCH_LIMIT),
+                api_client.get_recent_records(
+                    WORKOUT_COLLECTION_URL, WORKOUT_FETCH_LIMIT
+                ),
                 return_exceptions=True,
             )
             _LOGGER.debug("asyncio.gather results: %s", results)
@@ -200,10 +216,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "profile",
                 "body_measurement",
                 "latest_recovery",
-                "latest_sleep",
-                "latest_cycle",
-                "latest_workout",
+                "sleeps",
+                "cycles",
+                "workouts",
             ]
+            raw: Dict[str, Any] = {}
             any_data_fetched = False
             unauthorized: WhoopUnauthorized | None = None
 
@@ -222,8 +239,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
                 else:
                     _LOGGER.debug("Successfully fetched data for %s.", key)
-                    data_dict[key] = result_item
+                    if key in ("sleeps", "cycles", "workouts"):
+                        raw[key] = result_item
+                    else:
+                        data_dict[key] = result_item
                     any_data_fetched = True
+
+            data_dict.update(split_cycles(raw.get("cycles")))
+            data_dict.update(
+                split_sleeps(raw.get("sleeps"), data_dict["latest_cycle"])
+            )
+            data_dict.update(
+                split_workouts(raw.get("workouts"), data_dict["latest_cycle"])
+            )
 
             if unauthorized is not None:
                 _handle_unauthorized(unauthorized)
